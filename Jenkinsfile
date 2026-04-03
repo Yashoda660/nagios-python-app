@@ -3,40 +3,50 @@ pipeline {
 
     environment {
         IMAGE_NAME = "yash09876/nagios-python-app"
+        REPO = "yash09876/nagios-python-app"
     }
 
     stages {
 
-        stage('Build Image') {
-            steps {
-                sh """
-                docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} .
-                docker tag ${IMAGE_NAME}:${BUILD_NUMBER} ${IMAGE_NAME}:latest
-                """
-            }
-        }
-
-        stage('Push Image') {
+        stage('Build & Push Image') {
             steps {
                 script {
                     docker.withRegistry(
                         'https://registry.hub.docker.com',
                         'dockerhub-creds'
                     ) {
-                        docker.image("${IMAGE_NAME}:${BUILD_NUMBER}").push()
-                        docker.image("${IMAGE_NAME}:latest").push()
+                        sh """
+                        docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} .
+                        docker tag ${IMAGE_NAME}:${BUILD_NUMBER} ${IMAGE_NAME}:latest
+                        docker push ${IMAGE_NAME}:${BUILD_NUMBER}
+                        docker push ${IMAGE_NAME}:latest
+                        """
                     }
                 }
             }
         }
 
-        stage('Show Last 3 Tags') {
+        stage('Delete Old Tags - Keep Last 3') {
             steps {
-                sh '''
-                echo "===== LAST 3 DOCKER TAGS ====="
-                curl -s "https://hub.docker.com/v2/repositories/yash09876/nagios-python-app/tags?page_size=100" \
-                | jq -r '.results | .[0:3] | .[].name'
-                '''
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_TOKEN'
+                )]) {
+                    sh '''
+                    echo "Deleting old Docker Hub tags (keeping last 3)"
+
+                    TAGS=$(curl -s -u $DOCKER_USER:$DOCKER_TOKEN \
+                      "https://hub.docker.com/v2/repositories/${REPO}/tags?page_size=100" \
+                      | jq -r '.results[].name' | tail -n +4)
+
+                    for TAG in $TAGS; do
+                        echo "Deleting tag: $TAG"
+                        curl -s -X DELETE -u $DOCKER_USER:$DOCKER_TOKEN \
+                          "https://hub.docker.com/v2/repositories/${REPO}/tags/$TAG/"
+                    done
+                    '''
+                }
             }
         }
     }
