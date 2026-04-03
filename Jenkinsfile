@@ -2,26 +2,21 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME     = "yash09876/nagios-python-app"
-        CONTAINER_NAME = "nagios-python-container"
+        IMAGE_NAME = "yash09876/nagios-python-app"
     }
 
     stages {
 
-        // ✅ Checkout happens automatically from SCM
-        stage('SCM Checkout (Auto)') {
+        stage('Build Image') {
             steps {
-                echo 'Source code already checked out by Jenkins'
+                sh """
+                docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} .
+                docker tag ${IMAGE_NAME}:${BUILD_NUMBER} ${IMAGE_NAME}:latest
+                """
             }
         }
 
-        stage('Build Docker Image') {
-            steps {
-                sh "docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} ."
-            }
-        }
-
-        stage('Push Image to Docker Hub') {
+        stage('Push Image') {
             steps {
                 script {
                     docker.withRegistry(
@@ -29,31 +24,20 @@ pipeline {
                         'dockerhub-creds'
                     ) {
                         docker.image("${IMAGE_NAME}:${BUILD_NUMBER}").push()
+                        docker.image("${IMAGE_NAME}:latest").push()
                     }
                 }
             }
         }
 
-        stage('Deploy Container') {
+        stage('Show Last 3 Tags') {
             steps {
                 sh '''
-                docker stop ${CONTAINER_NAME} || true
-                docker rm ${CONTAINER_NAME} || true
-
-                docker run -d --restart unless-stopped \
-                  --name ${CONTAINER_NAME} \
-                  ${IMAGE_NAME}:${BUILD_NUMBER}
+                echo "===== LAST 3 DOCKER TAGS ====="
+                curl -s "https://hub.docker.com/v2/repositories/yash09876/nagios-python-app/tags?page_size=100" \
+                | jq -r '.results | .[0:3] | .[].name'
                 '''
             }
-        }
-    }
-
-    post {
-        success {
-            echo "✅ Build, Push and Deployment Successful"
-        }
-        failure {
-            echo "❌ Pipeline Failed"
         }
     }
 }
