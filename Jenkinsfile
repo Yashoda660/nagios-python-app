@@ -3,27 +3,29 @@ pipeline {
 
     environment {
         IMAGE_NAME = "yash09876/nagios-python-app"
-        REPO = "yash09876/nagios-python-app"
+        REPO       = "yash09876/nagios-python-app"
     }
 
-    stage('Build & Push Image') {
-    steps {
-        script {
-            docker.withRegistry(
-                'https://registry.hub.docker.com',
-                'dockerhub-creds'
-            ) {
-                sh """
-                docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} .
-                docker tag ${IMAGE_NAME}:${BUILD_NUMBER} ${IMAGE_NAME}:latest
-                """
+    stages {
 
-                docker.image("${IMAGE_NAME}:${BUILD_NUMBER}").push()
-                docker.image("${IMAGE_NAME}:latest").push()
+        stage('Build & Push Image') {
+            steps {
+                script {
+                    docker.withRegistry(
+                        'https://registry.hub.docker.com',
+                        'dockerhub-creds'
+                    ) {
+                        sh """
+                        docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} .
+                        docker tag ${IMAGE_NAME}:${BUILD_NUMBER} ${IMAGE_NAME}:latest
+                        """
+
+                        docker.image("${IMAGE_NAME}:${BUILD_NUMBER}").push()
+                        docker.image("${IMAGE_NAME}:latest").push()
+                    }
+                }
             }
         }
-    }
-}
 
         stage('Delete Old Tags - Keep Last 3') {
             steps {
@@ -48,5 +50,6 @@ pipeline {
                 }
             }
         }
-    }
-}
+
+    }   // <-- closes stages
+}       // <-- closes pipeline
