@@ -28,36 +28,39 @@ pipeline {
         }
 
         stage('Delete Old Tags - Keep Last 3') {
-    steps {
-        withCredentials([usernamePassword(
-            credentialsId: 'dockerhub-creds',
-            usernameVariable: 'DOCKER_USER',
-            passwordVariable: 'DOCKER_TOKEN'
-        )]) {
-            sh '''
-            echo "Fetching Docker Hub tags..."
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_TOKEN'
+                )]) {
+                    sh '''
+                    echo "Fetching Docker Hub tags..."
 
-            curl -s -u $DOCKER_USER:$DOCKER_TOKEN \
-            "https://hub.docker.com/v2/repositories/${REPO}/tags?page_size=100" \
-            | jq -r '.results[].name' > all_tags.txt
+                    curl -s -u $DOCKER_USER:$DOCKER_TOKEN \
+                      "https://hub.docker.com/v2/repositories/${REPO}/tags?page_size=100" \
+                    | jq -r '.results[].name' > all_tags.txt
 
-            echo "All tags:"
-            cat all_tags.txt
+                    echo "All tags:"
+                    cat all_tags.txt
 
-            echo "Keeping only last 3 (latest + 2 newest)"
+                    echo "Keeping only latest 3 tags"
 
-            KEEP_TAGS=$(head -n 3 all_tags.txt)
+                    KEEP_TAGS=$(head -n 3 all_tags.txt)
 
-            for TAG in $(cat all_tags.txt); do
-                if echo "$KEEP_TAGS" | grep -w "$TAG" >/dev/null; then
-                    echo "Keeping tag: $TAG"
-                else
-                    echo "Deleting tag: $TAG"
-                    curl -s -X DELETE -u $DOCKER_USER:$DOCKER_TOKEN \
-                    "https://hub.docker.com/v2/repositories/${REPO}/tags/$TAG/"
-                fi
-            done
-            '''
+                    for TAG in $(cat all_tags.txt); do
+                        if echo "$KEEP_TAGS" | grep -w "$TAG" >/dev/null; then
+                            echo "Keeping tag: $TAG"
+                        else
+                            echo "Deleting tag: $TAG"
+                            curl -s -X DELETE -u $DOCKER_USER:$DOCKER_TOKEN \
+                              "https://hub.docker.com/v2/repositories/${REPO}/tags/$TAG/"
+                        fi
+                    done
+                    '''
+                }
+            }
         }
-    }
-}
+
+    }   // end of stages
+}       // end of pipeline
