@@ -28,28 +28,36 @@ pipeline {
         }
 
         stage('Delete Old Tags - Keep Last 3') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-creds',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_TOKEN'
-                )]) {
-                    sh '''
-                    echo "Deleting old Docker Hub tags (keeping last 3)"
+    steps {
+        withCredentials([usernamePassword(
+            credentialsId: 'dockerhub-creds',
+            usernameVariable: 'DOCKER_USER',
+            passwordVariable: 'DOCKER_TOKEN'
+        )]) {
+            sh '''
+            echo "Fetching Docker Hub tags..."
 
-                    TAGS=$(curl -s -u $DOCKER_USER:$DOCKER_TOKEN \
-                      "https://hub.docker.com/v2/repositories/${REPO}/tags?page_size=100" \
-                      | jq -r '.results[].name' | tail -n +4)
+            curl -s -u $DOCKER_USER:$DOCKER_TOKEN \
+            "https://hub.docker.com/v2/repositories/${REPO}/tags?page_size=100" \
+            | jq -r '.results[].name' > all_tags.txt
 
-                    for TAG in $TAGS; do
-                        echo "Deleting tag: $TAG"
-                        curl -s -X DELETE -u $DOCKER_USER:$DOCKER_TOKEN \
-                          "https://hub.docker.com/v2/repositories/${REPO}/tags/$TAG/"
-                    done
-                    '''
-                }
-            }
+            echo "All tags:"
+            cat all_tags.txt
+
+            echo "Keeping only last 3 (latest + 2 newest)"
+
+            KEEP_TAGS=$(head -n 3 all_tags.txt)
+
+            for TAG in $(cat all_tags.txt); do
+                if echo "$KEEP_TAGS" | grep -w "$TAG" >/dev/null; then
+                    echo "Keeping tag: $TAG"
+                else
+                    echo "Deleting tag: $TAG"
+                    curl -s -X DELETE -u $DOCKER_USER:$DOCKER_TOKEN \
+                    "https://hub.docker.com/v2/repositories/${REPO}/tags/$TAG/"
+                fi
+            done
+            '''
         }
-
-    }   // <-- closes stages
-}       // <-- closes pipeline
+    }
+}
