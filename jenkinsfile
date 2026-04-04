@@ -1,161 +1,74 @@
-
 pipeline {
-    agent any
+    agent any
 
- 
+    environment {
+        DOCKER_USER    = "yash09876"
+        IMAGE_REPO     = "nagios-python-app"
+        CONTAINER_NAME = "nagios-python-container"
+        IMAGE_TAG      = "${BUILD_NUMBER}"
+    }
 
-    environment {
-        DOCKER_USER    = "yash09876"
-        IMAGE_REPO     = "jenkins-nagios-app"
-        CONTAINER_NAME = "jenkins-nagios-app"
-        KEEP_IMAGES    = 3
-    }
+    stages {
 
- 
+        stage('Checkout Code') {
+            steps {
+                checkout scm
+            }
+        }
 
-    stages {
+        stage('Build Docker Image') {
+            steps {
+                sh """
+                docker build -t ${DOCKER_USER}/${IMAGE_REPO}:${IMAGE_TAG} .
+                """
+            }
+        }
 
- 
+        stage('Docker Login') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'DOckerhub-creds',
+                        usernameVariable: 'DOCKER_USERNAME',
+                        passwordVariable: 'DOCKER_PASSWORD'
+                    )
+                ]) {
+                    sh """
+                    echo "\$DOCKER_PASSWORD" | docker login -u "\$DOCKER_USERNAME" --password-stdin
+                    """
+                }
+            }
+        }
 
-        stage('Show Build Info') {
-            steps {
-                echo "Jenkins Build Number = ${BUILD_NUMBER}"
-            }
-        }
+        stage('Push Image') {
+            steps {
+                sh """
+                docker push ${DOCKER_USER}/${IMAGE_REPO}:${IMAGE_TAG}
+                """
+            }
+        }
 
- 
+        stage('Deploy Container') {
+            steps {
+                sh """
+                docker stop ${CONTAINER_NAME} || true
+                docker rm ${CONTAINER_NAME} || true
 
-        stage('Build Docker Image') {
-            steps {
-                sh '''
-echo "Building image ${DOCKER_USER}/${IMAGE_REPO}:${BUILD_NUMBER}"
-docker build -t ${DOCKER_USER}/${IMAGE_REPO}:${BUILD_NUMBER} .
-'''
-            }
-        }
+                docker run -d \
+                  --name ${CONTAINER_NAME} \
+                  -p 5001:5000 \
+                  ${DOCKER_USER}/${IMAGE_REPO}:${IMAGE_TAG}
+                """
+            }
+        }
+    }
 
- 
-
-        stage('Docker Login') {
-            steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'dockerhub-creds',
-                        usernameVariable: 'DOCKER_LOGIN_USER',
-                        passwordVariable: 'DOCKER_LOGIN_PASS'
-                    )
-                ]) {
-                    sh '''
-echo "$DOCKER_LOGIN_PASS" | docker login -u "$DOCKER_LOGIN_USER" --password-stdin
-'''
-                }
-            }
-        }
-
- 
-
-        stage('Push Docker Image') {
-            steps {
-                sh '''
-echo "Pushing image ${DOCKER_USER}/${IMAGE_REPO}:${BUILD_NUMBER}"
-docker push ${DOCKER_USER}/${IMAGE_REPO}:${BUILD_NUMBER}
-'''
-            }
-        }
-
- 
-
-        stage('Deploy Latest Image') {
-            steps {
-                sh '''
-echo "Deploying image ${DOCKER_USER}/${IMAGE_REPO}:${BUILD_NUMBER}"
-
- 
-
-docker pull ${DOCKER_USER}/${IMAGE_REPO}:${BUILD_NUMBER}
-docker stop ${CONTAINER_NAME} || true
-docker rm ${CONTAINER_NAME} || true
-
- 
-
-docker run -d \
-  --name ${CONTAINER_NAME} \
-  -p 5001:5000 \
-  ${DOCKER_USER}/${IMAGE_REPO}:${BUILD_NUMBER}
-'''
-            }
-        }
-
- 
-
-        stage('Cleanup Old Docker Hub Tags (Keep Last 3 Only)') {
-            steps {
-                withCredentials([
-                    string(credentialsId: 'dockerhub-token', variable: 'DOCKER_PAT')
-                ]) {
-                    sh '''
-echo "Generating Docker Hub JWT token..."
-
- 
-
-JWT_RESPONSE=$(curl -s -X POST https://hub.docker.com/v2/users/login/ \
-  -H "Content-Type: application/json" \
-  -d "{
-        \\"username\\": \\"${DOCKER_USER}\\",
-        \\"password\\": \\"${DOCKER_PAT}\\"
-      }")
-
- 
-
-JWT_TOKEN=$(echo "$JWT_RESPONSE" | jq -r .token)
-
- 
-
-if [ -z "$JWT_TOKEN" ] || [ "$JWT_TOKEN" = "null" ]; then
-  echo "❌ JWT generation failed"
-  exit 1
-fi
-
- 
-
-echo "✅ JWT generated"
-
- 
-
-TAGS=$(curl -s -H "Authorization: Bearer $JWT_TOKEN" \
-https://hub.docker.com/v2/repositories/${DOCKER_USER}/${IMAGE_REPO}/tags/?page_size=100 \
-| jq -r '.results | sort_by(.last_updated) | reverse | .[].name')
-
- 
-
-COUNT=0
-for TAG in $TAGS; do
-  COUNT=$((COUNT+1))
-  if [ $COUNT -gt $KEEP_IMAGES ]; then
-    echo "Deleting old tag: $TAG"
-    curl -s -X DELETE \
-      -H "Authorization: Bearer $JWT_TOKEN" \
-https://hub.docker.com/v2/repositories/${DOCKER_USER}/${IMAGE_REPO}/tags/$TAG/
-  else
-    echo "Keeping tag: $TAG"
-  fi
-done
-'''
-                }
-            }
-        }
-    }
-
- 
-
-    post {
-        success {
-            echo "✅ SUCCESS: Build ${BUILD_NUMBER} deployed, only last 3 Docker images retained"
-        }
-        failure {
-            echo "❌ FAILURE: Pipeline execution failed"
-        }
-    }
+    post {
+        success {
+            echo "✅ Pipeline completed successfully"
+        }
+        failure {
+            echo "❌ Pipeline failed"
+        }
+    }
 }
-
-
