@@ -2,64 +2,45 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "yash09876/nagios-python-app"
-        REPO       = "yash09876/nagios-python-app"
+        DOCKER_USER    = "yash09876"
+        IMAGE_REPO     = "nagios-python-app"
+        CONTAINER_NAME = "nagios-python-container"
+        IMAGE_TAG      = "${BUILD_NUMBER}"
     }
 
     stages {
-
-        stage('Build & Push Image') {
+        stage('Build') {
             steps {
-                script {
-                    docker.withRegistry(
-                        'https://registry.hub.docker.com',
-                        'dockerhub-creds'
-                    ) {
-                        sh """
-                        docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} .
-                        docker tag ${IMAGE_NAME}:${BUILD_NUMBER} ${IMAGE_NAME}:latest
-                        """
+                sh 'docker build -t ${DOCKER_USER}/${IMAGE_REPO}:${IMAGE_TAG} .'
+            }
+        }
 
-                        docker.image("${IMAGE_NAME}:${BUILD_NUMBER}").push()
-                        docker.image("${IMAGE_NAME}:latest").push()
-                    }
+        stage('Login') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'U',
+                    passwordVariable: 'P'
+                )]) {
+                    sh 'echo $P | docker login -u $U --password-stdin'
                 }
             }
         }
 
-        stage('Delete Old Tags - Keep Last 3') {
-    steps {
-        withCredentials([usernamePassword(
-            credentialsId: 'dockerhub-creds',
-            usernameVariable: 'DOCKER_USER',
-            passwordVariable: 'DOCKER_TOKEN'
-        )]) {
-            sh '''
-            set -x
-            echo "Fetching tags from Docker Hub..."
+        stage('Push') {
+            steps {
+                sh 'docker push ${DOCKER_USER}/${IMAGE_REPO}:${IMAGE_TAG}'
+            }
+        }
 
-            curl -u $DOCKER_USER:$DOCKER_TOKEN \
-              "https://hub.docker.com/v2/repositories/${REPO}/tags?page_size=100" \
-              | jq -r '.results[].name' > all_tags.txt
-
-            echo "All tags:"
-            cat all_tags.txt
-
-            KEEP_TAGS=$(head -n 3 all_tags.txt)
-
-            for TAG in $(cat all_tags.txt); do
-                if echo "$KEEP_TAGS" | grep -w "$TAG"; then
-                    echo "Keeping tag: $TAG"
-                else
-                    echo "Attempting delete tag: $TAG"
-                    curl -v -X DELETE -u $DOCKER_USER:$DOCKER_TOKEN \
-                      "https://hub.docker.com/v2/repositories/${REPO}/tags/$TAG/"
-                fi
-            done
-            '''
+        stage('Run') {
+            steps {
+                sh '''
+                docker rm -f nagios-python-container || true
+                docker run -d --name nagios-python-container \
+                -p 5001:5000 ${DOCKER_USER}/${IMAGE_REPO}:${IMAGE_TAG}
+                '''
+            }
         }
     }
 }
-
-    }   // end of stages
-}       // end of pipeline
