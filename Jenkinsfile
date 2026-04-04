@@ -7,7 +7,7 @@ pipeline {
         CONTAINER_NAME = "nagios-python-container"
  HEAD
         KEEP_IMAGES    = 3
- ce2a1a8 (cleanup docker hub tags keep last 3)
+
         IMAGE_TAG      = "${BUILD_NUMBER}"
     }
 
@@ -56,7 +56,6 @@ pipeline {
                     sh """
                     echo "\$DOCKER_LOGIN_PASS" | docker login -u "\$DOCKER_LOGIN_USER" --password-stdin
                     """
-         ce2a1a8 (cleanup docker hub tags keep last 3)
                 }
             }
         }
@@ -142,7 +141,6 @@ pipeline {
         }
         failure {
             echo "❌ FAILURE: Pipeline failed"
- ce2a1a8 (cleanup docker hub tags keep last 3)
         }
     }
 }
