@@ -5,29 +5,11 @@ pipeline {
         DOCKER_USER    = "yash09876"
         IMAGE_REPO     = "nagios-python-app"
         CONTAINER_NAME = "nagios-python-container"
- HEAD
         KEEP_IMAGES    = 3
-
         IMAGE_TAG      = "${BUILD_NUMBER}"
     }
 
     stages {
- HEAD
-        stage('Build') {
-            steps {
-                sh 'docker build -t ${DOCKER_USER}/${IMAGE_REPO}:${IMAGE_TAG} .'
-            }
-        }
-
-        stage('Login') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-creds',
-                    usernameVariable: 'U',
-                    passwordVariable: 'P'
-                )]) {
-                    sh 'echo $P | docker login -u $U --password-stdin'
-
 
         stage('Show Build Info') {
             steps {
@@ -38,7 +20,6 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 sh """
-                echo "Building image ${DOCKER_USER}/${IMAGE_REPO}:${IMAGE_TAG}"
                 docker build -t ${DOCKER_USER}/${IMAGE_REPO}:${IMAGE_TAG} .
                 """
             }
@@ -60,25 +41,9 @@ pipeline {
             }
         }
 
-       HEAD
-        stage('Push') {
-            steps {
-                sh 'docker push ${DOCKER_USER}/${IMAGE_REPO}:${IMAGE_TAG}'
-            }
-        }
-
-        stage('Run') {
-            steps {
-                sh '''
-                docker rm -f nagios-python-container || true
-                docker run -d --name nagios-python-container \
-                -p 5001:5000 ${DOCKER_USER}/${IMAGE_REPO}:${IMAGE_TAG}
-                '''
-            }
         stage('Push Docker Image') {
             steps {
                 sh """
-                echo "Pushing image ${DOCKER_USER}/${IMAGE_REPO}:${IMAGE_TAG}"
                 docker push ${DOCKER_USER}/${IMAGE_REPO}:${IMAGE_TAG}
                 """
             }
@@ -87,9 +52,7 @@ pipeline {
         stage('Deploy Latest Image') {
             steps {
                 sh """
-                docker stop ${CONTAINER_NAME} || true
-                docker rm ${CONTAINER_NAME} || true
-
+                docker rm -f ${CONTAINER_NAME} || true
                 docker run -d \
                   --name ${CONTAINER_NAME} \
                   -p 5001:5000 \
@@ -104,14 +67,9 @@ pipeline {
                     string(credentialsId: 'dockerhub-token', variable: 'DOCKER_PAT')
                 ]) {
                     sh """
-                    echo "Authenticating to Docker Hub..."
-
                     JWT_TOKEN=\$(curl -s -X POST https://hub.docker.com/v2/users/login/ \
                       -H "Content-Type: application/json" \
-                      -d '{ "username": "${DOCKER_USER}", "password": "${DOCKER_PAT}" }' \
-                      | jq -r .token)
-
-                    echo "Fetching tags..."
+                      -d '{ "username": "${DOCKER_USER}", "password": "${DOCKER_PAT}" }' | jq -r .token)
 
                     TAGS=\$(curl -s -H "Authorization: Bearer \$JWT_TOKEN" \
                       https://hub.docker.com/v2/repositories/${DOCKER_USER}/${IMAGE_REPO}/tags/?page_size=100 \
@@ -121,12 +79,9 @@ pipeline {
                     for TAG in \$TAGS; do
                         COUNT=\$((COUNT+1))
                         if [ \$COUNT -gt ${KEEP_IMAGES} ]; then
-                            echo "Deleting old tag: \$TAG"
                             curl -s -X DELETE \
                               -H "Authorization: Bearer \$JWT_TOKEN" \
                               https://hub.docker.com/v2/repositories/${DOCKER_USER}/${IMAGE_REPO}/tags/\$TAG/
-                        else
-                            echo "Keeping tag: \$TAG"
                         fi
                     done
                     """
@@ -137,10 +92,11 @@ pipeline {
 
     post {
         success {
-            echo "✅ SUCCESS: Only latest 3 Docker Hub tags retained"
+            echo "✅ SUCCESS: Only last 3 Docker Hub tags retained"
         }
         failure {
             echo "❌ FAILURE: Pipeline failed"
         }
     }
 }
+
